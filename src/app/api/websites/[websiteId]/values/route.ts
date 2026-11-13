@@ -1,9 +1,8 @@
-import { z } from 'zod';
 import { EVENT_COLUMNS, FILTER_COLUMNS, SEGMENT_TYPES, SESSION_COLUMNS } from '@/lib/constants';
 import { getQueryFilters, parseRequest } from '@/lib/request';
 import { badRequest, json, unauthorized } from '@/lib/response';
-import { dateRangeParams, fieldsParam, searchParams } from '@/lib/schema';
-import { canViewWebsite } from '@/permissions';
+import { fieldsParam, searchParams, withDateRange } from '@/lib/schema';
+import { canViewWebsiteSection } from '@/permissions';
 import { getWebsiteSegments } from '@/queries/prisma';
 import { getValues } from '@/queries/sql';
 
@@ -11,9 +10,8 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ websiteId: string }> },
 ) {
-  const schema = z.object({
+  const schema = withDateRange({
     type: fieldsParam,
-    ...dateRangeParams,
     ...searchParams,
   });
 
@@ -25,11 +23,27 @@ export async function GET(
 
   const { websiteId } = await params;
 
-  if (!(await canViewWebsite(auth, websiteId))) {
+  if (
+    !(await canViewWebsiteSection(auth, websiteId, [
+      'overview',
+      'events',
+      'sessions',
+      'compare',
+      'breakdown',
+      'utm',
+      'attribution',
+    ]))
+  ) {
     return unauthorized();
   }
 
   const { type } = query;
+
+  // distinctId values identify individual visitors, so they are only available
+  // to shares that expose the Sessions section.
+  if (type === 'distinctId' && !(await canViewWebsiteSection(auth, websiteId, 'sessions'))) {
+    return unauthorized();
+  }
 
   if (!SESSION_COLUMNS.includes(type) && !EVENT_COLUMNS.includes(type) && !SEGMENT_TYPES[type]) {
     return badRequest();
@@ -46,5 +60,5 @@ export async function GET(
     values = await getValues(websiteId, FILTER_COLUMNS[type], filters);
   }
 
-  return json(values.filter(n => n).sort());
+  return json(values.filter(n => n?.value != null).sort());
 }

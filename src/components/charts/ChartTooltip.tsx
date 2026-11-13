@@ -1,4 +1,4 @@
-import { Column, FloatingTooltip, Row, StatusLight } from '@umami/react-zen';
+import { Column, FloatingTooltip, Row, StatusLight, Text } from '@umami/react-zen';
 import type { ReactNode } from 'react';
 
 export function ChartTooltip({
@@ -11,11 +11,30 @@ export function ChartTooltip({
   value?: ReactNode;
 }) {
   return (
-    <FloatingTooltip>
-      <Column gap="3" fontSize="1">
-        {title && <Row alignItems="center">{title}</Row>}
+    <FloatingTooltip style={{ backgroundColor: 'transparent', padding: 0 }}>
+      <Column
+        gap="3"
+        padding="4"
+        borderRadius="md"
+        style={{
+          backgroundColor: 'rgba(0,0,0,0.8)',
+          borderRadius: '5.25px',
+          color: 'white',
+          gap: '10.5px',
+          padding: '14px',
+        }}
+      >
+        {title && (
+          <Text size="sm" style={{ fontSize: '12.25px', lineHeight: '17.5px' }}>
+            {title}
+          </Text>
+        )}
         <Row alignItems="center">
-          <StatusLight color={color}>{value}</StatusLight>
+          <StatusLight color={color}>
+            <Text size="sm" style={{ fontSize: '12.25px', lineHeight: '17.5px' }}>
+              {value}
+            </Text>
+          </StatusLight>
         </Row>
       </Column>
     </FloatingTooltip>

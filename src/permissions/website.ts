@@ -1,53 +1,158 @@
 import { hasPermission } from '@/lib/auth';
 import { PERMISSIONS } from '@/lib/constants';
+import { getEntity } from '@/lib/entity';
+import { getBillingAccess, getTeamBillingScope, getWebsiteBillingScope } from '@/lib/load';
+import prisma from '@/lib/prisma';
 import type { Auth } from '@/lib/types';
-import { getLink, getPixel, getTeamUser, getWebsite } from '@/queries/prisma';
+import type { Website } from '@/generated/prisma/client';
+import { getTeamUser, getWebsite } from '@/queries/prisma';
+
+async function hasWebsiteBillingAccess(website: Pick<Website, 'userId' | 'teamId'>) {
+  return !(await getBillingAccess(await getWebsiteBillingScope(website))).isPastDue;
+}
 
 export async function canViewWebsite({ user, shareToken }: Auth, websiteId: string) {
   if (user?.isAdmin) {
     return true;
   }
 
-  if (shareToken?.websiteId === websiteId) {
+  if (
+    shareToken?.websiteId === websiteId ||
+    shareToken?.pixelId === websiteId ||
+    shareToken?.linkId === websiteId ||
+    shareToken?.websiteIds?.includes(websiteId) ||
+    shareToken?.pixelIds?.includes(websiteId) ||
+    shareToken?.linkIds?.includes(websiteId)
+  ) {
     return true;
   }
 
-  const website = await getWebsite(websiteId);
-  const link = await getLink(websiteId);
-  const pixel = await getPixel(websiteId);
+  const entity = await getEntity(websiteId);
 
-  const entity = website || link || pixel;
-
-  if (!entity) {
+  if (!entity || !user) {
     return false;
   }
 
   if (entity.userId) {
-    return user.id === entity.userId;
+    return user.id === entity.userId && (await hasWebsiteBillingAccess(entity));
   }
 
   if (entity.teamId) {
     const teamUser = await getTeamUser(entity.teamId, user.id);
 
-    return !!teamUser;
+    return !!teamUser && (await hasWebsiteBillingAccess(entity));
   }
 
   return false;
 }
 
+export async function canViewBatchWebsites({ user, shareToken }: Auth, websiteIds: string[]) {
+  if (!websiteIds.length) {
+    return [];
+  }
+
+  const requestedIds = Array.from(new Set(websiteIds));
+
+  if (user?.isAdmin) {
+    return requestedIds;
+  }
+
+  const shareAllowedIds = new Set(
+    [
+      shareToken?.websiteId,
+      shareToken?.pixelId,
+      shareToken?.linkId,
+      ...(shareToken?.websiteIds ?? []),
+      ...(shareToken?.pixelIds ?? []),
+      ...(shareToken?.linkIds ?? []),
+    ].filter((id): id is string => Boolean(id)),
+  );
+
+  if (!user) {
+    return requestedIds.filter(id => shareAllowedIds.has(id));
+  }
+
+  const websites = await prisma.client.website.findMany({
+    where: {
+      id: {
+        in: requestedIds,
+      },
+    },
+    select: {
+      id: true,
+      userId: true,
+      teamId: true,
+    },
+  });
+
+  const ownedIds = new Set(
+    websites.filter(website => website.userId === user.id).map(website => website.id),
+  );
+  const teamIds = Array.from(
+    new Set(
+      websites.map(website => website.teamId).filter((teamId): teamId is string => Boolean(teamId)),
+    ),
+  );
+  const teamUsers = teamIds.length
+    ? await prisma.client.teamUser.findMany({
+        where: {
+          userId: user.id,
+          teamId: {
+            in: teamIds,
+          },
+          team: { deletedAt: null },
+        },
+        select: {
+          teamId: true,
+        },
+      })
+    : [];
+  const allowedTeamIds = new Set(teamUsers.map(teamUser => teamUser.teamId));
+  const teamOwnedIds = new Set(
+    websites
+      .filter(website => website.teamId && allowedTeamIds.has(website.teamId))
+      .map(website => website.id),
+  );
+
+  const allowedIds = requestedIds.filter(
+    id => shareAllowedIds.has(id) || ownedIds.has(id) || teamOwnedIds.has(id),
+  );
+
+  const blockedIds = new Set(
+    await Promise.all(
+      websites
+        .filter(website => allowedIds.includes(website.id) && !shareAllowedIds.has(website.id))
+        .map(async website => ((await hasWebsiteBillingAccess(website)) ? null : website.id)),
+    ).then(ids => ids.filter((id): id is string => !!id)),
+  );
+
+  return allowedIds.filter(id => !blockedIds.has(id));
+}
+
 export async function canViewAllWebsites({ user }: Auth) {
-  return user.isAdmin;
+  return user?.isAdmin ?? false;
 }
 
 export async function canCreateWebsite({ user }: Auth) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
 
-  return hasPermission(user.role, PERMISSIONS.websiteCreate);
+  return (
+    !(await getBillingAccess({ accountId: user.id }, user.id)).isPastDue &&
+    hasPermission(user.role, PERMISSIONS.websiteCreate)
+  );
 }
 
 export async function canUpdateWebsite({ user }: Auth, websiteId: string) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
@@ -59,19 +164,27 @@ export async function canUpdateWebsite({ user }: Auth, websiteId: string) {
   }
 
   if (website.userId) {
-    return user.id === website.userId;
+    return user.id === website.userId && (await hasWebsiteBillingAccess(website));
   }
 
   if (website.teamId) {
     const teamUser = await getTeamUser(website.teamId, user.id);
 
-    return teamUser && hasPermission(teamUser.role, PERMISSIONS.websiteUpdate);
+    return (
+      !!teamUser &&
+      (await hasWebsiteBillingAccess(website)) &&
+      hasPermission(teamUser.role, PERMISSIONS.websiteUpdate)
+    );
   }
 
   return false;
 }
 
 export async function canDeleteWebsite({ user }: Auth, websiteId: string) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
@@ -83,19 +196,31 @@ export async function canDeleteWebsite({ user }: Auth, websiteId: string) {
   }
 
   if (website.userId) {
-    return user.id === website.userId;
+    return user.id === website.userId && (await hasWebsiteBillingAccess(website));
   }
 
   if (website.teamId) {
     const teamUser = await getTeamUser(website.teamId, user.id);
 
-    return teamUser && hasPermission(teamUser.role, PERMISSIONS.websiteDelete);
+    return (
+      !!teamUser &&
+      (await hasWebsiteBillingAccess(website)) &&
+      hasPermission(teamUser.role, PERMISSIONS.websiteDelete)
+    );
   }
 
   return false;
 }
 
 export async function canTransferWebsiteToUser({ user }: Auth, websiteId: string, userId: string) {
+  if (!user) {
+    return false;
+  }
+
+  if (user.isAdmin) {
+    return true;
+  }
+
   const website = await getWebsite(websiteId);
 
   if (!website) {
@@ -105,13 +230,25 @@ export async function canTransferWebsiteToUser({ user }: Auth, websiteId: string
   if (website.teamId && user.id === userId) {
     const teamUser = await getTeamUser(website.teamId, userId);
 
-    return teamUser && hasPermission(teamUser.role, PERMISSIONS.websiteTransferToUser);
+    return (
+      !!teamUser &&
+      (await hasWebsiteBillingAccess(website)) &&
+      hasPermission(teamUser.role, PERMISSIONS.websiteTransferToUser)
+    );
   }
 
   return false;
 }
 
 export async function canTransferWebsiteToTeam({ user }: Auth, websiteId: string, teamId: string) {
+  if (!user) {
+    return false;
+  }
+
+  if (user.isAdmin) {
+    return true;
+  }
+
   const website = await getWebsite(websiteId);
 
   if (!website) {
@@ -121,7 +258,12 @@ export async function canTransferWebsiteToTeam({ user }: Auth, websiteId: string
   if (website.userId && website.userId === user.id) {
     const teamUser = await getTeamUser(teamId, user.id);
 
-    return teamUser && hasPermission(teamUser.role, PERMISSIONS.websiteTransferToTeam);
+    return (
+      !!teamUser &&
+      (await hasWebsiteBillingAccess(website)) &&
+      !(await getBillingAccess(await getTeamBillingScope(teamId))).isPastDue &&
+      hasPermission(teamUser.role, PERMISSIONS.websiteTransferToTeam)
+    );
   }
 
   return false;

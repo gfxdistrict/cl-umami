@@ -1,5 +1,5 @@
 import { LoadingPanel } from '@/components/common/LoadingPanel';
-import { useDateRange, useMessages } from '@/components/hooks';
+import { useDateRange, useMessages, useTimezone } from '@/components/hooks';
 import { useWebsiteStatsQuery } from '@/components/hooks/queries/useWebsiteStatsQuery';
 import { MetricCard } from '@/components/metrics/MetricCard';
 import { MetricsBar } from '@/components/metrics/MetricsBar';
@@ -12,9 +12,10 @@ export function PixelMetricsBar({
   showChange?: boolean;
   compareMode?: boolean;
 }) {
-  const { isAllTime } = useDateRange();
-  const { formatMessage, labels } = useMessages();
-  const { data, isLoading, isFetching, error } = useWebsiteStatsQuery(pixelId);
+  const { timezone } = useTimezone();
+  const { isAllTime, hasComparison } = useDateRange({ timezone });
+  const { t, labels } = useMessages();
+  const { data, isLoading, isFetching, error } = useWebsiteStatsQuery({ websiteId: pixelId });
 
   const { pageviews, visitors, visits, comparison } = data || {};
 
@@ -22,19 +23,19 @@ export function PixelMetricsBar({
     ? [
         {
           value: visitors,
-          label: formatMessage(labels.visitors),
+          label: t(labels.visitors),
           change: visitors - comparison.visitors,
           formatValue: formatLongNumber,
         },
         {
           value: visits,
-          label: formatMessage(labels.visits),
+          label: t(labels.visits),
           change: visits - comparison.visits,
           formatValue: formatLongNumber,
         },
         {
           value: pageviews,
-          label: formatMessage(labels.views),
+          label: t(labels.views),
           change: pageviews - comparison.pageviews,
           formatValue: formatLongNumber,
         },
@@ -60,7 +61,7 @@ export function PixelMetricsBar({
               change={change}
               formatValue={formatValue}
               reverseColors={reverseColors}
-              showChange={!isAllTime}
+              showChange={!isAllTime && hasComparison}
             />
           );
         })}

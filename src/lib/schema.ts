@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { isValidTimezone, normalizeTimezone } from '@/lib/date';
-import { UNIT_TYPES } from './constants';
+import { DATE_PERIODS, isValidTimezone, normalizeTimezone } from '@/lib/date';
+import { DATA_TYPE, FIELD_LENGTH, UNIT_TYPES } from './constants';
 
 export const timezoneParam = z
   .string()
@@ -13,6 +13,48 @@ export const unitParam = z.string().refine(value => UNIT_TYPES.includes(value), 
   message: 'Invalid unit',
 });
 
+export const periodParam = z.enum(DATE_PERIODS);
+
+const periodDateRangeParams = {
+  startAt: z.coerce.number().int().optional(),
+  endAt: z.coerce.number().int().optional(),
+  period: periodParam.optional(),
+};
+
+export function withPeriodDateRange<T extends z.ZodRawShape>(shape: T, required = true) {
+  return z
+    .object({
+      ...shape,
+      ...periodDateRangeParams,
+    })
+    .superRefine((data: Record<string, unknown>, ctx) => {
+      const hasStartAt = data.startAt != null;
+      const hasEndAt = data.endAt != null;
+      const hasPeriod = data.period != null;
+
+      if (hasStartAt !== hasEndAt) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'startAt and endAt must be provided together',
+        });
+      }
+
+      if (required && !hasStartAt && !hasPeriod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Either startAt+endAt or period must be provided',
+        });
+      }
+
+      if (hasPeriod && (hasStartAt || hasEndAt)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'period cannot be combined with an explicit date range',
+        });
+      }
+    });
+}
+
 export const dateRangeParams = {
   startAt: z.coerce.number().optional(),
   endAt: z.coerce.number().optional(),
@@ -20,8 +62,41 @@ export const dateRangeParams = {
   endDate: z.coerce.date().optional(),
   timezone: timezoneParam.optional(),
   unit: unitParam.optional(),
-  compare: z.string().optional(),
+  compare: z.enum(['prev', 'yoy']).optional(),
 };
+
+export function withDateRange<T extends z.ZodRawShape>(shape?: T) {
+  return z
+    .object({
+      ...dateRangeParams,
+      period: periodParam.optional(),
+      ...shape,
+    })
+    .superRefine((data: Record<string, unknown>, ctx) => {
+      const hasTimestamps = data.startAt != null && data.endAt != null;
+      const hasDates = data.startDate != null && data.endDate != null;
+      const hasExplicitRange =
+        data.startAt != null ||
+        data.endAt != null ||
+        data.startDate != null ||
+        data.endDate != null;
+      const hasPeriod = data.period != null;
+
+      if (!hasTimestamps && !hasDates && !hasPeriod) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Either startAt+endAt, startDate+endDate, or period must be provided',
+        });
+      }
+
+      if (hasPeriod && hasExplicitRange) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'period cannot be combined with an explicit date range',
+        });
+      }
+    });
+}
 
 export const filterParams = {
   path: z.string().optional(),
@@ -36,24 +111,53 @@ export const filterParams = {
   city: z.string().optional(),
   tag: z.string().optional(),
   hostname: z.string().optional(),
+  distinctId: z.string().optional(),
   language: z.string().optional(),
   event: z.string().optional(),
+  utmSource: z.string().optional(),
+  utmMedium: z.string().optional(),
+  utmCampaign: z.string().optional(),
+  utmContent: z.string().optional(),
+  utmTerm: z.string().optional(),
   segment: z.uuid().optional(),
   cohort: z.uuid().optional(),
   eventType: z.coerce.number().int().positive().optional(),
+  excludeBounce: z.string().optional(),
+  match: z.enum(['all', 'any']).optional(),
 };
 
 export const searchParams = {
   search: z.string().optional(),
 };
 
+export const replayParams = {
+  minDuration: z.coerce.number().int().nonnegative().optional(),
+};
+
+export const annotationSchema = z.object({
+  date: z.coerce.date(),
+  allDay: z.boolean().optional().default(true),
+  note: z.string().min(1).max(500),
+});
+
 export const pagingParams = {
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().optional(),
+  maxResults: z.coerce.number().int().positive().optional(),
 };
 
 export const sortingParams = {
   orderBy: z.string().optional(),
+  sortDescending: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform(value => {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      return value === 'true';
+    }),
 };
 
 export const userRoleParam = z.enum(['admin', 'user', 'view-only']);
@@ -76,6 +180,9 @@ export const urlOrPathParam = z.string().refine(
   },
 );
 
+// Unix seconds that fit Postgres integer columns and ClickHouse DateTime (1970 to 2038).
+export const unixTimestampParam = z.coerce.number().int().min(0).max(2147483647);
+
 export const fieldsParam = z.enum([
   'path',
   'referrer',
@@ -89,8 +196,14 @@ export const fieldsParam = z.enum([
   'city',
   'tag',
   'hostname',
+  'distinctId',
   'language',
   'event',
+  'utmSource',
+  'utmMedium',
+  'utmCampaign',
+  'utmContent',
+  'utmTerm',
 ]);
 
 export const reportTypeParam = z.enum([
@@ -98,29 +211,41 @@ export const reportTypeParam = z.enum([
   'breakdown',
   'funnel',
   'goal',
+  'heatmap',
   'journey',
+  'performance',
   'retention',
   'revenue',
   'utm',
 ]);
 
+export const operatorParam = z.enum([
+  'eq',
+  'neq',
+  's',
+  'ns',
+  'c',
+  'dnc',
+  're',
+  'nre',
+  't',
+  'f',
+  'gt',
+  'lt',
+  'gte',
+  'lte',
+  'bf',
+  'af',
+]);
+
 export const goalReportSchema = z.object({
   type: z.literal('goal'),
-  parameters: z
-    .object({
-      startDate: z.coerce.date(),
-      endDate: z.coerce.date(),
-      type: z.string(),
-      value: z.string(),
-      operator: z.enum(['count', 'sum', 'average']).optional(),
-      property: z.string().optional(),
-    })
-    .refine(data => {
-      if (data.type === 'event' && data.property) {
-        return data.operator && data.property;
-      }
-      return true;
-    }),
+  parameters: z.object({
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+    type: z.enum(['path', 'event']),
+    value: z.string(),
+  }),
 });
 
 export const funnelReportSchema = z.object({
@@ -134,6 +259,15 @@ export const funnelReportSchema = z.object({
         z.object({
           type: z.enum(['path', 'event']),
           value: z.string(),
+          filters: z
+            .array(
+              z.object({
+                property: z.string().min(1),
+                operator: z.enum(['eq', 'neq', 'c', 'dnc']),
+                value: z.string(),
+              }),
+            )
+            .optional(),
         }),
       )
       .min(2)
@@ -149,6 +283,7 @@ export const journeyReportSchema = z.object({
     steps: z.coerce.number().min(2).max(7),
     startStep: z.string().optional(),
     endStep: z.string().optional(),
+    eventType: z.coerce.number().int().positive().optional(),
   }),
 });
 
@@ -157,7 +292,7 @@ export const retentionReportSchema = z.object({
   parameters: z.object({
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
-    timezone: z.string().optional(),
+    timezone: timezoneParam.optional(),
   }),
 });
 
@@ -169,13 +304,26 @@ export const utmReportSchema = z.object({
   }),
 });
 
+export const performanceReportSchema = z.object({
+  type: z.literal('performance'),
+  parameters: z.object({
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+    unit: unitParam.optional(),
+    timezone: timezoneParam.optional(),
+    metric: z.enum(['lcp', 'inp', 'cls', 'fcp', 'ttfb']).optional(),
+  }),
+});
+
 export const revenueReportSchema = z.object({
   type: z.literal('revenue'),
   parameters: z.object({
     startDate: z.coerce.date(),
     endDate: z.coerce.date(),
-    timezone: z.string().optional(),
+    unit: unitParam.optional(),
+    timezone: timezoneParam.optional(),
     currency: z.string(),
+    compare: z.enum(['prev', 'yoy']).optional(),
   }),
 });
 
@@ -200,6 +348,16 @@ export const breakdownReportSchema = z.object({
   }),
 });
 
+export const heatmapReportSchema = z.object({
+  type: z.literal('heatmap'),
+  parameters: z.object({
+    startDate: z.coerce.date(),
+    endDate: z.coerce.date(),
+    urlPath: z.string().max(500).optional(),
+    mode: z.enum(['click', 'scroll']).optional(),
+  }),
+});
+
 export const reportBaseSchema = z.object({
   websiteId: z.uuid(),
   type: reportTypeParam,
@@ -212,11 +370,13 @@ export const reportTypeSchema = z.discriminatedUnion('type', [
   goalReportSchema,
   funnelReportSchema,
   journeyReportSchema,
+  performanceReportSchema,
   retentionReportSchema,
   utmReportSchema,
   revenueReportSchema,
   attributionReportSchema,
   breakdownReportSchema,
+  heatmapReportSchema,
 ]);
 
 export const reportSchema = reportBaseSchema;
@@ -224,9 +384,43 @@ export const reportSchema = reportBaseSchema;
 export const reportResultSchema = z.intersection(
   z.object({
     websiteId: z.uuid(),
-    filters: z.object({ ...filterParams }),
+    filters: z.object({ ...filterParams }).passthrough(),
   }),
   reportTypeSchema,
 );
 
 export const segmentTypeParam = z.enum(['segment', 'cohort']);
+
+const propertyFilterParamSchema = z.object({
+  propertyName: z.string().min(1).max(FIELD_LENGTH.dataKey),
+  dataType: z.union([
+    z.literal(DATA_TYPE.string),
+    z.literal(DATA_TYPE.number),
+    z.literal(DATA_TYPE.boolean),
+    z.literal(DATA_TYPE.date),
+    z.literal(DATA_TYPE.array),
+  ]),
+  operator: operatorParam,
+  value: z.string(),
+});
+
+export const segmentParamSchema = z.object({
+  filters: z
+    .array(
+      z.object({
+        name: z.string(),
+        operator: operatorParam,
+        value: z.string(),
+      }),
+    )
+    .optional(),
+  sessionPropertyFilters: z.array(propertyFilterParamSchema).optional(),
+  match: z.enum(['all', 'any']).optional(),
+  dateRange: z.string().optional(),
+  action: z
+    .object({
+      type: z.enum(['path', 'event']),
+      value: z.string(),
+    })
+    .optional(),
+});

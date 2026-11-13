@@ -1,6 +1,6 @@
-import { Column, type ColumnProps, FloatingTooltip, useTheme } from '@umami/react-zen';
+import { Box, Column, type ColumnProps, FloatingTooltip, Text, useTheme } from '@umami/react-zen';
 import { colord } from 'colord';
-import { useMemo, useState } from 'react';
+import { type CSSProperties, useMemo, useState } from 'react';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps';
 import {
   useCountryNames,
@@ -12,6 +12,7 @@ import { getThemeColors } from '@/lib/colors';
 import { ISO_COUNTRIES, MAP_FILE } from '@/lib/constants';
 import { percentFilter } from '@/lib/filters';
 import { formatLongNumber } from '@/lib/format';
+import styles from './WorldMap.module.css';
 
 export interface WorldMapProps extends ColumnProps {
   websiteId?: string;
@@ -23,10 +24,10 @@ export function WorldMap({ websiteId, data, ...props }: WorldMapProps) {
   const { theme } = useTheme();
   const { colors } = getThemeColors(theme);
   const { locale } = useLocale();
-  const { formatMessage, labels } = useMessages();
+  const { t, labels } = useMessages();
   const { countryNames } = useCountryNames(locale);
-  const visitorsLabel = formatMessage(labels.visitors).toLocaleLowerCase(locale);
-  const unknownLabel = formatMessage(labels.unknown);
+  const visitorsLabel = t(labels.visitors).toLocaleLowerCase(locale);
+  const unknownLabel = t(labels.unknown);
 
   const { data: mapData } = useWebsiteMetricsQuery(websiteId, {
     type: 'country',
@@ -69,7 +70,13 @@ export function WorldMap({ websiteId, data, ...props }: WorldMapProps) {
       {...props}
       data-tip=""
       data-for="world-map-tooltip"
-      style={{ margin: 'auto 0', overflow: 'hidden' }}
+      style={
+        {
+          margin: 'auto 0',
+          overflow: 'hidden',
+          '--map-hover-color': colors.map.hoverColor,
+        } as CSSProperties
+      }
     >
       <ComposableMap projection="geoMercator">
         <ZoomableGroup zoom={0.8} minZoom={0.7} center={[0, 40]}>
@@ -85,11 +92,7 @@ export function WorldMap({ websiteId, data, ...props }: WorldMapProps) {
                     fill={getFillColor(code)}
                     stroke={colors.map.strokeColor}
                     opacity={getOpacity(code)}
-                    style={{
-                      default: { outline: 'none' },
-                      hover: { outline: 'none', fill: colors.map.hoverColor },
-                      pressed: { outline: 'none' },
-                    }}
+                    className={styles.geography}
                     onMouseOver={() => handleHover(code)}
                     onMouseOut={() => setTooltipPopup(null)}
                   />
@@ -99,7 +102,17 @@ export function WorldMap({ websiteId, data, ...props }: WorldMapProps) {
           </Geographies>
         </ZoomableGroup>
       </ComposableMap>
-      {tooltip && <FloatingTooltip>{tooltip}</FloatingTooltip>}
+      {tooltip && (
+        <FloatingTooltip style={{ backgroundColor: 'transparent', padding: 0 }}>
+          <Box
+            style={{ backgroundColor: 'rgba(0,0,0,0.8)', color: 'white' }}
+            padding
+            borderRadius="md"
+          >
+            {tooltip}
+          </Box>
+        </FloatingTooltip>
+      )}
     </Column>
   );
 }

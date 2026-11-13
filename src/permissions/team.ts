@@ -1,68 +1,138 @@
 import { hasPermission } from '@/lib/auth';
 import { PERMISSIONS } from '@/lib/constants';
+import { getBillingAccess, getTeamBillingScope } from '@/lib/load';
 import type { Auth } from '@/lib/types';
 import { getTeamUser } from '@/queries/prisma';
 
-export async function canViewTeam({ user }: Auth, teamId: string) {
+async function hasTeamBillingAccess(teamId: string) {
+  return !(await getBillingAccess(await getTeamBillingScope(teamId))).isPastDue;
+}
+
+export async function canViewTeamSubscription({ user }: Auth, teamId: string) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
 
-  return getTeamUser(teamId, user.id);
+  return !!(await getTeamUser(teamId, user.id));
+}
+
+export async function canViewTeam(auth: Auth, teamId: string) {
+  if (!(await canViewTeamSubscription(auth, teamId))) {
+    return false;
+  }
+
+  return hasTeamBillingAccess(teamId);
 }
 
 export async function canCreateTeam({ user }: Auth) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
 
-  return !!user;
+  return (
+    !(await getBillingAccess({ accountId: user.id }, user.id)).isPastDue &&
+    hasPermission(user.role, PERMISSIONS.teamCreate)
+  );
 }
 
 export async function canUpdateTeam({ user }: Auth, teamId: string) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
 
   const teamUser = await getTeamUser(teamId, user.id);
 
-  return teamUser && hasPermission(teamUser.role, PERMISSIONS.teamUpdate);
+  return (
+    !!teamUser &&
+    (await hasTeamBillingAccess(teamId)) &&
+    hasPermission(teamUser.role, PERMISSIONS.teamUpdate)
+  );
 }
 
 export async function canDeleteTeam({ user }: Auth, teamId: string) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
 
   const teamUser = await getTeamUser(teamId, user.id);
 
-  return teamUser && hasPermission(teamUser.role, PERMISSIONS.teamDelete);
+  return (
+    !!teamUser &&
+    (await hasTeamBillingAccess(teamId)) &&
+    hasPermission(teamUser.role, PERMISSIONS.teamDelete)
+  );
 }
 
 export async function canDeleteTeamUser({ user }: Auth, teamId: string, removeUserId: string) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
 
   if (removeUserId === user.id) {
-    return true;
+    return hasTeamBillingAccess(teamId);
   }
 
   const teamUser = await getTeamUser(teamId, user.id);
 
-  return teamUser && hasPermission(teamUser.role, PERMISSIONS.teamUpdate);
+  return (
+    !!teamUser &&
+    (await hasTeamBillingAccess(teamId)) &&
+    hasPermission(teamUser.role, PERMISSIONS.teamUpdate)
+  );
 }
 
 export async function canCreateTeamWebsite({ user }: Auth, teamId: string) {
+  if (!user) {
+    return false;
+  }
+
   if (user.isAdmin) {
     return true;
   }
 
+  // A team role never overrides a globally view-only user. Only the global role is
+  // checked here, not personal billing; team billing applies to team resources.
+  if (!hasPermission(user.role, PERMISSIONS.websiteCreate)) {
+    return false;
+  }
+
   const teamUser = await getTeamUser(teamId, user.id);
 
-  return teamUser && hasPermission(teamUser.role, PERMISSIONS.websiteCreate);
+  return (
+    !!teamUser &&
+    (await hasTeamBillingAccess(teamId)) &&
+    hasPermission(teamUser.role, PERMISSIONS.websiteCreate)
+  );
 }
 
 export async function canViewAllTeams({ user }: Auth) {
+  return user?.isAdmin ?? false;
+}
+
+export async function canEnforceTwoFactorAuthForTeam({ user }: Auth, teamId: string) {
+  if (!user) {
+    return false;
+  }
+
   return user.isAdmin;
 }

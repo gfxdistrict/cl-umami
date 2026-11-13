@@ -4,6 +4,7 @@ import { LinkButton } from './LinkButton';
 
 export function PageHeader({
   title,
+  titleSuffix,
   description,
   label,
   icon,
@@ -12,6 +13,7 @@ export function PageHeader({
   children,
 }: {
   title: string;
+  titleSuffix?: ReactNode;
   description?: string;
   label?: ReactNode;
   icon?: ReactNode;
@@ -23,7 +25,7 @@ export function PageHeader({
 }) {
   return (
     <Grid
-      columns={{ xs: '1fr', md: '1fr 1fr' }}
+      columns={{ base: '1fr', md: '1fr 1fr' }}
       paddingY="6"
       marginBottom="6"
       border={showBorder ? 'bottom' : undefined}
@@ -38,10 +40,15 @@ export function PageHeader({
           )}
           {title && titleHref ? (
             <LinkButton href={titleHref} variant="quiet">
-              <Heading size={{ xs: '2', md: '3', lg: '4' }}>{title}</Heading>
+              <Heading size={{ base: 'lg', md: '2xl', lg: '3xl' }}>{title}</Heading>
             </LinkButton>
           ) : (
-            title && <Heading size={{ xs: '2', md: '3', lg: '4' }}>{title}</Heading>
+            title && <Heading size={{ base: 'lg', md: '2xl', lg: '3xl' }}>{title}</Heading>
+          )}
+          {titleSuffix && (
+            <Row alignItems="center" alignSelf="center" style={{ flexShrink: 0 }}>
+              {titleSuffix}
+            </Row>
           )}
         </Row>
         {description && (

@@ -1,3 +1,6 @@
+import { toUnicode } from 'punycode';
+import { DEFAULT_CURRENCY } from './constants';
+
 export function parseTime(val: number) {
   const days = ~~(val / 86400);
   const hours = ~~(val / 3600) - days * 24;
@@ -47,19 +50,21 @@ export function formatNumber(n: string | number) {
 export function formatLongNumber(value: number) {
   const n = Number(value);
 
-  if (n >= 1000000000) {
-    return `${(n / 1000000).toFixed(1)}b`;
+  // Each threshold is lowered by half of the smaller format's last digit, so values
+  // that round up move to the larger format instead of showing as 1000k or 100.0k.
+  if (n >= 999950000) {
+    return `${(n / 1000000000).toFixed(1)}b`;
   }
-  if (n >= 1000000) {
+  if (n >= 999500) {
     return `${(n / 1000000).toFixed(1)}m`;
   }
-  if (n >= 100000) {
+  if (n >= 99950) {
     return `${(n / 1000).toFixed(0)}k`;
   }
-  if (n >= 10000) {
+  if (n >= 9995) {
     return `${(n / 1000).toFixed(1)}k`;
   }
-  if (n >= 1000) {
+  if (n >= 999.5) {
     return `${(n / 1000).toFixed(2)}k`;
   }
 
@@ -94,7 +99,7 @@ export function formatCurrency(value: number, currency: string, locale = 'en-US'
     // Fallback to default currency format if an error occurs
     formattedValue = new Intl.NumberFormat(locale, {
       style: 'currency',
-      currency: 'USD',
+      currency: DEFAULT_CURRENCY,
     });
   }
 
@@ -115,4 +120,23 @@ export function formatLongCurrency(value: number, currency: string, locale = 'en
   }
 
   return formatCurrency(n, currency, locale);
+}
+
+export function decodePunycodeDomain(domain?: string | null) {
+  if (!domain) {
+    return domain;
+  }
+
+  try {
+    return toUnicode(domain);
+  } catch {
+    return domain;
+  }
+}
+
+export function truncateString<T extends string | null | undefined>(
+  value: T,
+  maxLength: number,
+): T extends string ? string : T {
+  return (value ? value.substring(0, maxLength) : value) as T extends string ? string : T;
 }

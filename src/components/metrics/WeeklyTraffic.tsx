@@ -1,13 +1,16 @@
-import { Focusable, Grid, Row, Text, Tooltip, TooltipTrigger } from '@umami/react-zen';
+import { Box, Grid, Row, Text, Tooltip, TooltipTrigger } from '@umami/react-zen';
 import { addHours, format, startOfDay } from 'date-fns';
+import { Fragment } from 'react';
 import { LoadingPanel } from '@/components/common/LoadingPanel';
 import { useLocale, useMessages, useWeeklyTrafficQuery } from '@/components/hooks';
+import { TIME_FORMATS } from '@/lib/constants';
 import { getDayOfWeekAsDate } from '@/lib/date';
+import { formatLongNumber } from '@/lib/format';
 
 export function WeeklyTraffic({ websiteId }: { websiteId: string }) {
   const { data, isLoading, error } = useWeeklyTrafficQuery(websiteId);
-  const { dateLocale } = useLocale();
-  const { labels, formatMessage } = useMessages();
+  const { dateLocale, timeFormat } = useLocale();
+  const { labels, t } = useMessages();
   const { weekStartsOn } = dateLocale.options;
   const daysOfWeek = Array(7)
     .fill(weekStartsOn)
@@ -39,17 +42,26 @@ export function WeeklyTraffic({ websiteId }: { websiteId: string }) {
       <Grid columns="repeat(8, 1fr)" gap>
         {data && (
           <>
-            <Grid rows="repeat(25, 16px)" gap="1">
-              <Row>&nbsp;</Row>
+            <Row>&nbsp;</Row>
+            {daysOfWeek.map((index: number) => (
+              <Row key={index} alignItems="center" justifyContent="center">
+                <Text weight="bold" align="center">
+                  {format(getDayOfWeekAsDate(index), 'EEE', { locale: dateLocale })}
+                </Text>
+              </Row>
+            ))}
+            <Grid rows="repeat(24, 16px)" gap="1">
               {Array(24)
                 .fill(null)
                 .map((_, i) => {
-                  const label = format(addHours(startOfDay(new Date()), i), 'haaa', {
-                    locale: dateLocale,
-                  });
+                  const label = format(
+                    addHours(startOfDay(new Date()), i),
+                    timeFormat === TIME_FORMATS.h24 ? 'H' : 'haaa',
+                    { locale: dateLocale },
+                  );
                   return (
                     <Row key={i} justifyContent="flex-end">
-                      <Text color="muted" size="2">
+                      <Text color="muted" size="sm">
                         {label}
                       </Text>
                     </Row>
@@ -66,38 +78,48 @@ export function WeeklyTraffic({ websiteId }: { websiteId: string }) {
                   key={index}
                   gap="1"
                 >
-                  <Row alignItems="center" justifyContent="center" marginBottom="3">
-                    <Text weight="bold" align="center">
-                      {format(getDayOfWeekAsDate(index), 'EEE', { locale: dateLocale })}
-                    </Text>
-                  </Row>
                   {day?.map((count: number, j) => {
                     const pct = max ? count / max : 0;
+                    const cell = (
+                      <Row
+                        tabIndex={0}
+                        alignItems="center"
+                        justifyContent="center"
+                        backgroundColor="surface-raised"
+                        width="16px"
+                        height="16px"
+                        borderRadius="full"
+                        style={{ margin: '0 auto' }}
+                        role="button"
+                      >
+                        <Row
+                          backgroundColor="primary"
+                          width="16px"
+                          height="16px"
+                          borderRadius="full"
+                          style={{ opacity: pct, transform: `scale(${pct})` }}
+                        />
+                      </Row>
+                    );
+
+                    if (count <= 0) {
+                      return <Fragment key={j}>{cell}</Fragment>;
+                    }
+
                     return (
-                      <TooltipTrigger key={j} delay={0} isDisabled={count <= 0}>
-                        <Focusable>
-                          <Row
-                            alignItems="center"
-                            justifyContent="center"
-                            backgroundColor="2"
-                            width="16px"
-                            height="16px"
-                            borderRadius="full"
-                            style={{ margin: '0 auto' }}
-                            role="button"
+                      <TooltipTrigger key={j} delay={0}>
+                        {cell}
+                        <Tooltip placement="right" className="bg-transparent p-0">
+                          <Box
+                            padding
+                            borderRadius="md"
+                            style={{ backgroundColor: 'rgba(0,0,0,0.8)', color: 'white' }}
                           >
-                            <Row
-                              backgroundColor="primary"
-                              width="16px"
-                              height="16px"
-                              borderRadius="full"
-                              style={{ opacity: pct, transform: `scale(${pct})` }}
-                            />
-                          </Row>
-                        </Focusable>
-                        <Tooltip placement="right">{`${formatMessage(
-                          labels.visitors,
-                        )}: ${count}`}</Tooltip>
+                            <Text size="sm">
+                              {`${t(labels.visitors)}: ${formatLongNumber(count)}`}
+                            </Text>
+                          </Box>
+                        </Tooltip>
                       </TooltipTrigger>
                     );
                   })}

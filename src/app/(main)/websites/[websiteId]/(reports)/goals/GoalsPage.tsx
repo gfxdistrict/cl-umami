@@ -1,28 +1,40 @@
 'use client';
 import { Column, Grid } from '@umami/react-zen';
 import { WebsiteControls } from '@/app/(main)/websites/[websiteId]/WebsiteControls';
+import { Empty } from '@/components/common/Empty';
 import { LoadingPanel } from '@/components/common/LoadingPanel';
 import { Panel } from '@/components/common/Panel';
 import { SectionHeader } from '@/components/common/SectionHeader';
-import { useDateRange, useReportsQuery } from '@/components/hooks';
+import { useDateRange, useGoalsQuery, useNavigation, useTimezone } from '@/components/hooks';
 import { Goal } from './Goal';
 import { GoalAddButton } from './GoalAddButton';
 
 export function GoalsPage({ websiteId }: { websiteId: string }) {
-  const { data, isLoading, error } = useReportsQuery({ websiteId, type: 'goal' });
+  const { data, isLoading, error } = useGoalsQuery({ websiteId });
+  const { timezone } = useTimezone();
   const {
     dateRange: { startDate, endDate },
-  } = useDateRange();
+  } = useDateRange({ timezone });
+  const { pathname } = useNavigation();
+  const isSharePage = pathname.includes('/share/');
 
   return (
     <Column gap>
       <WebsiteControls websiteId={websiteId} />
-      <SectionHeader>
-        <GoalAddButton websiteId={websiteId} />
-      </SectionHeader>
-      <LoadingPanel data={data} isLoading={isLoading} error={error}>
+      {!isSharePage && (
+        <SectionHeader>
+          <GoalAddButton websiteId={websiteId} />
+        </SectionHeader>
+      )}
+      <LoadingPanel
+        data={data}
+        isLoading={isLoading}
+        error={error}
+        isEmpty={!data?.data?.length}
+        renderEmpty={() => <Empty />}
+      >
         {data && (
-          <Grid columns={{ xs: '1fr', md: '1fr 1fr' }} gap>
+          <Grid columns={{ base: '1fr', md: '1fr 1fr' }} gap>
             {data.data.map((report: any) => (
               <Panel key={report.id}>
                 <Goal {...report} startDate={startDate} endDate={endDate} />

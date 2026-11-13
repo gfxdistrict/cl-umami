@@ -1,65 +1,108 @@
-import { Column, Grid, Icon, Label, Row } from '@umami/react-zen';
+import { Column, Grid, Icon, Row, Text } from '@umami/react-zen';
 import type { ReactNode } from 'react';
 import { DateDistance } from '@/components/common/DateDistance';
+import { Favicon } from '@/components/common/Favicon';
 import { TypeIcon } from '@/components/common/TypeIcon';
 import { useFormat, useLocale, useMessages, useRegionNames } from '@/components/hooks';
-import { Calendar, KeyRound, Landmark, MapPin } from '@/components/icons';
+import {
+  AppWindow,
+  Calendar,
+  Cpu,
+  Earth,
+  KeyRound,
+  Landmark,
+  Laptop,
+  MapPin,
+  Share2,
+} from '@/components/icons';
+import { Network } from '@/components/svg';
+import { decodePunycodeDomain } from '@/lib/format';
 
 export function SessionInfo({ data }) {
   const { locale } = useLocale();
-  const { formatMessage, labels } = useMessages();
+  const { t, labels } = useMessages();
   const { formatValue } = useFormat();
   const { getRegionName } = useRegionNames(locale);
+  const distinctId =
+    data?.distinctIds?.length > 1
+      ? `${data.distinctIds.length} linked IDs`
+      : data?.distinctId?.trim();
+  const stitchedSessionCount = data?.stitchedSessionCount;
 
   return (
     <Grid columns="repeat(auto-fit, minmax(200px, 1fr)" gap>
-      <Info label={formatMessage(labels.distinctId)} icon={<KeyRound />}>
-        {data?.distinctId}
+      <Info label={t(labels.distinctId)} icon={<KeyRound />}>
+        {distinctId ? <span style={{ overflowWrap: 'anywhere' }}>{distinctId}</span> : '—'}
       </Info>
 
-      <Info label={formatMessage(labels.lastSeen)} icon={<Calendar />}>
+      <Info label={t(labels.lastSeen)} icon={<Calendar />}>
         <DateDistance date={new Date(data.lastAt)} />
       </Info>
 
-      <Info label={formatMessage(labels.firstSeen)} icon={<Calendar />}>
+      <Info label={t(labels.firstSeen)} icon={<Calendar />}>
         <DateDistance date={new Date(data.firstAt)} />
       </Info>
 
       <Info
-        label={formatMessage(labels.country)}
-        icon={<TypeIcon type="country" value={data?.country} />}
+        label={t(labels.referrer)}
+        icon={data?.referrerDomain ? <Favicon domain={data.referrerDomain} /> : <Share2 />}
       >
-        {formatValue(data?.country, 'country')}
+        {data?.referrerDomain && (
+          <Text truncate title={data.referrerDomain}>
+            <a href={`https://${data.referrerDomain}`} target="_blank" rel="noreferrer noopener">
+              {decodePunycodeDomain(data.referrerDomain)}
+            </a>
+          </Text>
+        )}
       </Info>
 
-      <Info label={formatMessage(labels.region)} icon={<MapPin />}>
+      <Info
+        label={t(labels.country)}
+        icon={data?.country ? <TypeIcon type="country" value={data.country} /> : <Earth />}
+      >
+        {data?.country && formatValue(data.country, 'country')}
+      </Info>
+
+      <Info label={t(labels.region)} icon={<MapPin />}>
         {getRegionName(data?.region)}
       </Info>
 
-      <Info label={formatMessage(labels.city)} icon={<Landmark />}>
+      <Info label={t(labels.city)} icon={<Landmark />}>
         {data?.city}
       </Info>
 
       <Info
-        label={formatMessage(labels.browser)}
-        icon={<TypeIcon type="browser" value={data?.browser} />}
+        label={t(labels.browser)}
+        icon={data?.browser ? <TypeIcon type="browser" value={data.browser} /> : <AppWindow />}
       >
-        {formatValue(data?.browser, 'browser')}
+        {data?.browser && formatValue(data.browser, 'browser')}
       </Info>
 
       <Info
-        label={formatMessage(labels.os)}
-        icon={<TypeIcon type="os" value={data?.os?.toLowerCase()?.replaceAll(/\W/g, '-')} />}
+        label={t(labels.os)}
+        icon={
+          data?.os ? (
+            <TypeIcon type="os" value={data.os.toLowerCase().replaceAll(/\W/g, '-')} />
+          ) : (
+            <Cpu />
+          )
+        }
       >
-        {formatValue(data?.os, 'os')}
+        {data?.os && formatValue(data.os, 'os')}
       </Info>
 
       <Info
-        label={formatMessage(labels.device)}
-        icon={<TypeIcon type="device" value={data?.device} />}
+        label={t(labels.device)}
+        icon={data?.device ? <TypeIcon type="device" value={data.device} /> : <Laptop />}
       >
-        {formatValue(data?.device, 'device')}
+        {data?.device && formatValue(data.device, 'device')}
       </Info>
+
+      {distinctId && stitchedSessionCount > 1 && (
+        <Info label="Linked sessions" icon={<Network />}>
+          {stitchedSessionCount}
+        </Info>
+      )}
     </Grid>
   );
 }
@@ -74,8 +117,8 @@ const Info = ({
   children: ReactNode;
 }) => {
   return (
-    <Column>
-      <Label>{label}</Label>
+    <Column gap="2" minWidth="0">
+      <Text weight="bold">{label}</Text>
       <Row alignItems="center" gap>
         {icon && <Icon>{icon}</Icon>}
         {children || '—'}

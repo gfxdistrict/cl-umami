@@ -6,24 +6,40 @@ import { useLocale } from './useLocale';
 import { useMessages } from './useMessages';
 
 export function useFormat() {
-  const { formatMessage, labels } = useMessages();
+  const { t, labels } = useMessages();
   const { locale } = useLocale();
   const { countryNames } = useCountryNames(locale);
   const { languageNames } = useLanguageNames(locale);
 
   const formatOS = (value: string): string => {
+    if (!value) {
+      return t(labels.unknown);
+    }
+
     return OS_NAMES[value] || value;
   };
 
   const formatBrowser = (value: string): string => {
+    if (!value || value === 'browser') {
+      return t(labels.unknown);
+    }
+
     return BROWSERS[value] || value;
   };
 
   const formatDevice = (value: string): string => {
-    return formatMessage(labels[value] || labels.unknown);
+    if (!value) {
+      return t(labels.unknown);
+    }
+
+    return labels[value] ? t(labels[value]) : value;
   };
 
   const formatCountry = (value: string): string => {
+    if (!value) {
+      return t(labels.unknown);
+    }
+
     return countryNames[value] || value;
   };
 
